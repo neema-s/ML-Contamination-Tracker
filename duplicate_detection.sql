@@ -63,3 +63,34 @@ SELECT
 FROM Dataset d
 LEFT JOIN Data_Row dr ON d.dataset_id = dr.dataset_id
 GROUP BY d.dataset_id;
+
+-- procedure to detect exact duplicates between datasets
+DROP PROCEDURE IF EXISTS detect_exact_duplicates;
+DELIMITER //
+
+CREATE PROCEDURE detect_exact_duplicates(
+    IN p_train_dataset_id INT,
+    IN p_test_dataset_id INT,
+    IN p_report_id INT  
+)
+BEGIN
+    INSERT INTO Contaminated_Row (report_id, row_hash, train_dataset_id, test_dataset_id, train_row_number, test_row_number)
+    SELECT p_report_id, t.row_hash, t.dataset_id, s.dataset_id, t.row_no, s.row_no
+    FROM Data_Row t
+    JOIN Data_Row s
+      ON t.row_hash = s.row_hash
+     AND t.dataset_id = p_train_dataset_id
+     AND s.dataset_id = p_test_dataset_id;
+
+    UPDATE Data_Row dr
+    JOIN Contaminated_Row cr
+      ON dr.row_hash = cr.row_hash
+     AND dr.dataset_id = cr.test_dataset_id
+    SET dr.is_contaminated = TRUE
+    WHERE dr.dataset_id = p_test_dataset_id;
+
+    SELECT CONCAT('Contamination check complete between datasets ',
+                  p_train_dataset_id, ' and ', p_test_dataset_id) AS message;
+END //
+
+DELIMITER ;
