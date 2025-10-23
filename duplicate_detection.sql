@@ -2,7 +2,6 @@ USE ml_experiment_tracker;
 
 -- alter table to add hash + contamination flag
 ALTER TABLE Data_Row
-ADD COLUMN row_hash VARCHAR(64) AFTER row_data,
 ADD COLUMN is_contaminated BOOLEAN DEFAULT FALSE AFTER row_hash;
 
 -- index on row_hash for fast duplicate detection
