@@ -2,12 +2,26 @@ USE ml_experiment_tracker;
 
 -- alter table to add hash + contamination flag
 ALTER TABLE Data_Row
-ADD COLUMN is_contaminated BOOLEAN DEFAULT FALSE AFTER row_hash;
+ADD COLUMN IF NOT EXISTS `is_contaminated` BOOLEAN DEFAULT FALSE AFTER `row_hash`;
 
 -- index on row_hash for fast duplicate detection
 CREATE INDEX idx_row_hash ON Data_Row(row_hash);
 
+-- function to generate hash
+DROP FUNCTION IF EXISTS generate_row_hash;
+DELIMITER //
+
+CREATE FUNCTION generate_row_hash(input TEXT)
+RETURNS VARCHAR(64)
+DETERMINISTIC
+BEGIN
+    RETURN SHA2(input, 256);
+END //
+
+DELIMITER ;
+
 -- procedure to generate and store hashes for existing rows in a dataset
+DROP PROCEDURE IF EXISTS generate_and_store_hashes;
 DELIMITER //
 
 CREATE PROCEDURE generate_and_store_hashes(IN p_dataset_id INT)
@@ -22,6 +36,7 @@ END //
 DELIMITER ;
 
 -- trigger to auto_generate hash on new row insert
+DROP TRIGGER IF EXISTS trg_generate_hash;
 DELIMITER //
 
 CREATE TRIGGER trg_generate_hash
