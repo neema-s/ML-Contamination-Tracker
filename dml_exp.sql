@@ -22,6 +22,14 @@ VALUES
 ('ImageNet Augmented', '/datasets/imagenet_augmented.csv', 'imagenet_augmented.csv', 'csv', 'v2', 'validation', 'Augmented ImageNet data', 135.2, 'def456'),
 ('Twitter Sentiment', '/datasets/twitter_sentiment.csv', 'twitter_sentiment.csv', 'csv', 'v1', 'testing', 'Sentiment analysis dataset', 78.9, 'ghi789');
 
+INSERT INTO Contamination_Report 
+(exper_id, contaminated_rows_count, contamination_percentage, status, contamination_details)
+VALUES
+(1, 0, 0.0, 'Clean', 'No contamination detected'),
+(2, 120, 0.02, 'Minor', 'Minor contamination found in augmented dataset'),
+(3, 450, 0.15, 'High', 'High contamination — data leakage detected');
+
+
 
 INSERT INTO Experiment (experiment_name, model_type, hyperparameters, accuracy, loss, description, status)
 VALUES ('Image Classification Run 1', 'CNN', '{"lr":0.001,"epochs":50}', 0.91, 0.09, 'Baseline model', 'completed');
@@ -34,8 +42,6 @@ UPDATE Experiment
 SET status = 'running', accuracy = 0.92
 WHERE experiment_name = 'Image Classification Run 1';
 
-DELETE FROM Model
-WHERE model_name = 'Old_Model_V1';
 
 SELECT experiment_id, experiment_name, model_type, accuracy, status
 FROM Experiment
