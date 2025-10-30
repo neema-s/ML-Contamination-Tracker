@@ -32,7 +32,7 @@ VALUES
 
 
 INSERT INTO Experiment (experiment_name, model_type, hyperparameters, accuracy, loss, description, status)
-VALUES ('Image Classification Run 1', 'CNN', '{"lr":0.001,"epochs":50}', 0.91, 0.09, 'Baseline model', 'completed');
+VALUES ('Image Classification Run 10', 'CNN', '{"lr":0.001,"epochs":50}', 0.91, 0.09, 'Baseline model', 'completed');
 
 
 INSERT INTO Model (model_name, model_path, framework, description, model_size)

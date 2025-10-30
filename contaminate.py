@@ -2,7 +2,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 # Start with any clean dataset
-df = pd.read_csv('original_data.csv')
+df = pd.read_csv('earthquake_data_tsunami.csv')
 
 # Split into train and test (80-20)
 train, test = train_test_split(df, test_size=0.2, random_state=42)

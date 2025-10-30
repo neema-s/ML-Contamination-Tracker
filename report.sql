@@ -86,4 +86,3 @@ CALL flag_high_risk_experiments(10);
 
 -- View all contamination reports
 SELECT * FROM Contamination_Report;
-

@@ -4,7 +4,7 @@ from analysis import calculate_contamination, get_alert_level
 
 app = FastAPI()
 
-@app.get("GET /")
+@app.get("/")
 def home():
     return {"message": "Contamination Analysis API get is running"}
 
