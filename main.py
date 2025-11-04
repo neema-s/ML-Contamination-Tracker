@@ -246,21 +246,19 @@ async def detect_contamination(
 
         cursor.execute("SELECT COUNT(*) AS total FROM Data_Row WHERE dataset_id = %s", (test_dataset_id,))
         total_rows = cursor.fetchone()["total"]
-        print(total_rows)
+
         contamination_percentage = (contaminated_rows / total_rows) * 100 if total_rows > 0 else 0
 
         cursor.execute("""
             UPDATE Contamination_Report
             SET contaminated_rows_count = %s,
                 contamination_percentage = %s,
-                total rows= %s,
                 status = 'completed',
                 contamination_details = %s
             WHERE report_id = %s
         """, (
             contaminated_rows,
             contamination_percentage,
-            total_rows,
             f"Detected {contaminated_rows} contaminated rows between datasets {train_dataset_id} and {test_dataset_id}",
             report_id
         ))
