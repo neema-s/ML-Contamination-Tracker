@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 import pandas as pd
 import os
 from datetime import datetime
-from db_config import get_connection
+from db import get_connection
 
 app = FastAPI(title="ML Experiment Tracker API")
 
@@ -13,7 +13,6 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @app.post("/upload")
 async def upload_csv(file: UploadFile = File(...)):
-
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are allowed")
 
@@ -28,7 +27,6 @@ async def upload_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Error reading CSV: {str(e)}")
 
     conn = get_connection()
-
     cursor = conn.cursor(buffered=True)
 
     try:
@@ -48,8 +46,7 @@ async def upload_csv(file: UploadFile = File(...)):
             os.path.getsize(filepath),
             file.filename
         ))
-
-        conn.commit()  
+        conn.commit()
         dataset_id = cursor.lastrowid
 
         for i, row in df.iterrows():
@@ -58,8 +55,7 @@ async def upload_csv(file: UploadFile = File(...)):
                 INSERT INTO Data_Row (dataset_id, row_no, row_data)
                 VALUES (%s, %s, %s)
             """, (dataset_id, i + 1, row_data))
-
-        conn.commit() 
+        conn.commit()
 
     except Exception as e:
         conn.rollback()
@@ -75,6 +71,7 @@ async def upload_csv(file: UploadFile = File(...)):
         "rows_inserted": len(df)
     })
 
+
 @app.post("/create_experiment")
 async def create_experiment(
     experiment_name: str = Body(...),
@@ -84,7 +81,7 @@ async def create_experiment(
     status: str = Body("created"),
     train_dataset_id: int = Body(...),
     test_dataset_id: int = Body(...),
-    model_id: int = Body(None), 
+    model_id: int = Body(None),
     relationship_type: str = Body("trained_with")
 ):
     conn = get_connection()
@@ -142,6 +139,7 @@ async def create_experiment(
         "linked_model": model_id or "No model linked"
     })
 
+
 @app.get("/get_experiments")
 async def get_experiments():
     conn = get_connection()
@@ -153,8 +151,11 @@ async def get_experiments():
                 e.experiment_id,
                 e.experiment_name,
                 e.model_type,
-                e.status,
+                e.hyperparameters,
+                e.accuracy,
+                e.loss,
                 e.created_at,
+                e.updated_at,
                 e.description,
                 ed.usage_type,
                 d.dataset_name,
@@ -167,10 +168,9 @@ async def get_experiments():
             LEFT JOIN Model m ON em.model_id = m.model_id
             ORDER BY e.experiment_id;
         """)
-
         rows = cursor.fetchall()
-        experiments = {}
 
+        experiments = {}
         for row in rows:
             exp_id = row["experiment_id"]
             if exp_id not in experiments:
@@ -178,16 +178,17 @@ async def get_experiments():
                     "experiment_id": exp_id,
                     "experiment_name": row["experiment_name"],
                     "model_type": row["model_type"],
-                    "status": row["status"],
+                    "hyperparameters": row["hyperparameters"],
+                    "accuracy": row["accuracy"],
+                    "loss": row["loss"],
                     "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
                     "description": row["description"],
                     "datasets": {},
                     "model": None
                 }
-
             if row["usage_type"]:
                 experiments[exp_id]["datasets"][row["usage_type"]] = row["dataset_name"]
-
             if row["model_name"]:
                 experiments[exp_id]["model"] = {
                     "model_name": row["model_name"],
@@ -203,6 +204,7 @@ async def get_experiments():
 
     return list(experiments.values())
 
+
 @app.post("/detect_contamination")
 async def detect_contamination(
     exper_id: int = Body(...),
@@ -213,54 +215,50 @@ async def detect_contamination(
     cursor = conn.cursor(dictionary=True)
 
     try:
-        cursor.execute("SELECT row_no, row_hash FROM Data_Row WHERE dataset_id = %s", (train_dataset_id,))
-        train_rows = cursor.fetchall()
-
-        cursor.execute("SELECT row_no, row_hash FROM Data_Row WHERE dataset_id = %s", (test_dataset_id,))
-        test_rows = cursor.fetchall()
-
-        if not train_rows or not test_rows:
-            raise HTTPException(status_code=404, detail="One or both datasets are empty or missing")
-
-        test_hash_map = {row["row_hash"]: row["row_no"] for row in test_rows if row["row_hash"]}
-
-        contaminated = []
-        for train in train_rows:
-            if train["row_hash"] in test_hash_map:
-                contaminated.append((
-                    train["row_hash"],
-                    train_dataset_id,
-                    test_dataset_id,
-                    train["row_no"],
-                    test_hash_map[train["row_hash"]],
-                ))
-
-        contamination_count = len(contaminated)
-        contamination_percentage = (contamination_count / len(test_rows)) * 100 if test_rows else 0.0
+        cursor.callproc("generate_and_store_hashes", [train_dataset_id])
+        cursor.fetchall()
+        cursor.callproc("generate_and_store_hashes", [test_dataset_id])
+        cursor.fetchall()
+        conn.commit()
 
         cursor.execute("""
             INSERT INTO Contamination_Report (
-                exper_id, contaminated_rows_count, contamination_percentage, status, contamination_details
-            )
-            VALUES (%s, %s, %s, %s, %s)
-        """, (
-            exper_id,
-            contamination_count,
-            contamination_percentage,
-            "completed",
-            f"Detected {contamination_count} contaminated rows between datasets {train_dataset_id} and {test_dataset_id}"
-        ))
+                exper_id, contaminated_rows_count, contamination_percentage, status
+            ) VALUES (%s, %s, %s, %s)
+        """, (exper_id, 0, 0.0, "processing"))
         conn.commit()
-
         report_id = cursor.lastrowid
 
-        if contaminated:
-            cursor.executemany("""
-                INSERT INTO Contaminated_Row (
-                    report_id, row_hash, train_dataset_id, test_dataset_id, train_row_number, test_row_number
-                ) VALUES (%s, %s, %s, %s, %s, %s)
-            """, [(report_id, *row) for row in contaminated])
-            conn.commit()
+        cursor.callproc("detect_exact_duplicates", [train_dataset_id, test_dataset_id, report_id])
+        cursor.fetchall()
+        conn.commit()
+
+        cursor.execute("""
+            SELECT COUNT(*) AS contaminated_rows
+            FROM Contaminated_Row
+            WHERE report_id = %s
+        """, (report_id,))
+        contaminated_rows = cursor.fetchone()["contaminated_rows"]
+
+        cursor.execute("SELECT COUNT(*) AS total FROM Data_Row WHERE dataset_id = %s", (test_dataset_id,))
+        total_rows = cursor.fetchone()["total"]
+
+        contamination_percentage = (contaminated_rows / total_rows) * 100 if total_rows > 0 else 0
+
+        cursor.execute("""
+            UPDATE Contamination_Report
+            SET contaminated_rows_count = %s,
+                contamination_percentage = %s,
+                status = 'completed',
+                contamination_details = %s
+            WHERE report_id = %s
+        """, (
+            contaminated_rows,
+            contamination_percentage,
+            f"Detected {contaminated_rows} contaminated rows between datasets {train_dataset_id} and {test_dataset_id}",
+            report_id
+        ))
+        conn.commit()
 
     except Exception as e:
         conn.rollback()
@@ -274,64 +272,6 @@ async def detect_contamination(
         "message": "Contamination detection completed",
         "experiment_id": exper_id,
         "report_id": report_id,
-        "contaminated_rows": contamination_count,
+        "contaminated_rows": contaminated_rows,
         "contamination_percentage": contamination_percentage
     })
-
-
-
-
-
-
-
-# from fastapi import FastAPI, HTTPException
-# from db import get_connection
-# from analysis import calculate_contamination, get_alert_level
-
-# app = FastAPI()
-
-# @app.get("/")
-# def home():
-#     return {"message": "Contamination Analysis API get is running"}
-
-# @app.get("/experiments")
-# def list_experiments():
-#     conn = get_connection()
-#     cur = conn.cursor(dictionary=True)
-#     cur.execute("SELECT * FROM Experiment")
-#     data = cur.fetchall()
-#     cur.close()
-#     conn.close()
-#     return {"experiments": data}
-
-
-# @app.get("/experiments/{experiment_id}/contamination")
-# def contamination_report(experiment_id: int):
-#     data = calculate_contamination(experiment_id)
-#     if not data:
-#         raise HTTPException(status_code=404, detail="Experiment not found")
-#     level = get_alert_level(data["contamination_percentage"])
-#     return {"experiment_id": experiment_id, "contamination": data, "severity": level}
-
-
-# @app.get("/alerts")
-# def get_alerts():
-#     conn = get_connection()
-#     cur = conn.cursor(dictionary=True)
-#     cur.execute("""
-#         SELECT e.experiment_name, r.contamination_percentage,
-#                CASE
-#                     WHEN r.contamination_percentage = 0 THEN 'Clean'
-#                     WHEN r.contamination_percentage <= 0.05 THEN 'Low'
-#                     WHEN r.contamination_percentage <= 0.15 THEN 'Medium'
-#                     ELSE 'High'
-#                END AS severity
-#         FROM Contamination_Report r
-#         JOIN Experiment e ON e.experiment_id = r.exper_id
-#         WHERE r.contamination_percentage > 0
-#         ORDER BY r.contamination_percentage DESC
-#     """)
-#     data = cur.fetchall()
-#     cur.close()
-#     conn.close()
-#     return {"alerts": data}
