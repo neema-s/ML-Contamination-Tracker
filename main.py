@@ -330,3 +330,115 @@ async def view_duplicates(report_id: int):
     cursor.close()
     conn.close()
     return rows
+
+
+@app.delete("/experiments/{experiment_id}")
+def delete_experiment(experiment_id: int):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM Experiment WHERE experiment_id = %s", (experiment_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"message": f"Experiment {experiment_id} deleted successfully."}
+    except mysql.connector.Error as err:
+        print(f"MySQL error: {err}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"MySQL error: {err}")
+    except Exception as e:
+        print(f"General error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"General error: {e}")
+    
+
+@app.put("/update_experiment/{experiment_id}")
+async def update_experiment(
+    experiment_id: int,
+    experiment_name: str = Body(None),
+    description: str = Body(None),
+    model_type: str = Body(None),
+    hyperparameters: str = Body(None),
+    accuracy: float = Body(None),
+    loss: float = Body(None),
+    status: str = Body(None)
+):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        update_fields = []
+        values = []
+
+        if experiment_name is not None:
+            update_fields.append("experiment_name = %s")
+            values.append(experiment_name)
+        if description is not None:
+            update_fields.append("description = %s")
+            values.append(description)
+        if model_type is not None:
+            update_fields.append("model_type = %s")
+            values.append(model_type)
+        if hyperparameters is not None:
+            update_fields.append("hyperparameters = %s")
+            values.append(hyperparameters)
+        if accuracy is not None:
+            update_fields.append("accuracy = %s")
+            values.append(accuracy)
+        if loss is not None:
+            update_fields.append("loss = %s")
+            values.append(loss)
+        if status is not None:
+            update_fields.append("status = %s")
+            values.append(status)
+
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="No fields provided for update")
+
+        update_fields.append("updated_at = NOW()")
+
+        query = f"""
+            UPDATE Experiment 
+            SET {', '.join(update_fields)} 
+            WHERE experiment_id = %s
+        """
+        values.append(experiment_id)
+
+        cursor.execute(query, tuple(values))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Experiment not found")
+
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update experiment: {str(e)}")
+
+    finally:
+        cursor.close()
+        conn.close()
+
+    return JSONResponse({"message": "Experiment updated successfully!"})
+
+@app.get("/reports")
+def get_all_reports():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM Contamination_Report ORDER BY generated_at DESC")
+    reports = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return reports
+
+
+@app.get("/reports/{report_id}")
+def get_report(report_id: int):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM Contamination_Report WHERE report_id = %s", (report_id,))
+    report = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
