@@ -178,69 +178,36 @@ async def create_experiment(
 
 @app.get("/get_experiments")
 async def get_experiments():
+    """Fetch all experiments."""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-
     try:
-        cursor.execute("""
-            SELECT 
-                e.experiment_id,
-                e.experiment_name,
-                e.model_type,
-                e.hyperparameters,
-                e.accuracy,
-                e.loss,
-                e.created_at,
-                e.updated_at,
-                e.description,
-                ed.usage_type,
-                d.dataset_name,
-                m.model_name,
-                em.relationship_type
-            FROM Experiment e
-            LEFT JOIN Experiment_Dataset ed ON e.experiment_id = ed.experiment_id
-            LEFT JOIN Dataset d ON ed.data_id = d.dataset_id
-            LEFT JOIN Experiment_Model em ON e.experiment_id = em.exp_id
-            LEFT JOIN Model m ON em.model_id = m.model_id
-            ORDER BY e.experiment_id;
-        """)
-
-        rows = cursor.fetchall()
+        cursor.callproc("get_all_experiments")
         experiments = {}
-
-        for row in rows:
-            exp_id = row["experiment_id"]
-            if exp_id not in experiments:
-                experiments[exp_id] = {
-                    "experiment_id": exp_id,
-                    "experiment_name": row["experiment_name"],
-                    "model_type": row["model_type"],
-                    "hyperparameters": row["hyperparameters"],
-                    "accuracy": row["accuracy"],
-                    "loss": row["loss"],
-                    "created_at": row["created_at"],
-                    "updated_at": row["updated_at"],
-                    "description": row["description"],
-                    "datasets": {},
-                    "model": None
-                }
-
-            if row["usage_type"]:
-                experiments[exp_id]["datasets"][row["usage_type"]] = row["dataset_name"]
-
-            if row["model_name"]:
-                experiments[exp_id]["model"] = {
-                    "model_name": row["model_name"],
-                    "relationship_type": row["relationship_type"]
-                }
-
+        for result in cursor.stored_results():
+            rows = result.fetchall()
+            for row in rows:
+                exp_id = row["experiment_id"]
+                if exp_id not in experiments:
+                    experiments[exp_id] = {
+                        "experiment_id": exp_id,
+                        "experiment_name": row["experiment_name"],
+                        "model_type": row["model_type"],
+                        "hyperparameters": row["hyperparameters"],
+                        "accuracy": row["accuracy"],
+                        "loss": row["loss"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "description": row["description"],
+                        "datasets": {}
+                    }
+                if row["usage_type"]:
+                    experiments[exp_id]["datasets"][row["usage_type"]] = row["dataset_name"]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-
     finally:
         cursor.close()
         conn.close()
-
     return list(experiments.values())
 
 

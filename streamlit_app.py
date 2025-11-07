@@ -94,35 +94,46 @@ elif menu == "Create Experiment":
         except Exception as e:
             st.error(f"Connection error: {str(e)}")
 
-# 3. View Experiments
+# 4. View Experiments
 elif menu == "View Experiments":
     st.header("Existing Experiments")
     try:
         response = requests.get(f"{API_URL}/get_experiments")
         if response.status_code == 200:
             data = response.json()
-            if data:
-                df = pd.DataFrame(data)
-                df = df[
-                    [
-                        "experiment_id",
-                        "experiment_name",
-                        "model_type",
-                        "hyperparameters",
-                        "accuracy",
-                        "loss",
-                        "description",
-                        "created_at",
-                        "updated_at"
-                    ]
-                ]
-                st.dataframe(df)
-            else:
+            if not data:
                 st.info("No experiments found.")
+            else:
+                st.success(f"Total Experiments Found: {len(data)}")
+                df = pd.DataFrame(data)
+                # Format timestamps
+                if "created_at" in df.columns:
+                    df["created_at"] = pd.to_datetime(df["created_at"], errors='coerce').dt.strftime("%Y-%m-%d %H:%M:%S")
+                if "updated_at" in df.columns:
+                    df["updated_at"] = pd.to_datetime(df["updated_at"], errors='coerce').dt.strftime("%Y-%m-%d %H:%M:%S")
+                # Convert datasets dictionary to string
+                if "datasets" in df.columns:
+                    df["datasets"] = df["datasets"].apply(lambda x: f"Train: {x.get('train', 'None')}, Test: {x.get('test', 'None')}")
+                # Define desired columns
+                display_columns = [
+                    "experiment_id",
+                    "experiment_name",
+                    "model_type",
+                    "hyperparameters",
+                    "accuracy",
+                    "loss",
+                    "description",
+                    "created_at",
+                    "updated_at",
+                    "datasets"
+                ]
+                available_columns = [col for col in display_columns if col in df.columns]
+                st.dataframe(df[available_columns])
         else:
-            st.error(f"Error fetching experiments: {response.text}")
+            error_detail = response.json().get('detail', response.text)
+            st.error(f"Error fetching experiments: {response.status_code} - {error_detail}")
     except Exception as e:
-        st.error(f"Connection error: {e}")
+        st.error(f"Connection error: {str(e)}")
 
 
 # 4. Detect Contamination
