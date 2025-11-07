@@ -7,7 +7,7 @@ API_URL = "http://127.0.0.1:8000"
 st.set_page_config(page_title="ML Contamination Tracker", layout="wide")
 st.title("ML Contamination Tracker")
 
-menu = st.sidebar.radio("Navigation", ["Upload Dataset", "Create Experiment", "View Experiments", "Update Experiment", "Detect Contamination", "Delete Experiment", "View Contamination Reports"])
+menu = st.sidebar.radio("Navigation", ["Upload Dataset", "View Datasets", "Create Experiment", "View Experiments", "Update Experiment", "Detect Contamination", "Delete Experiment", "Delete Dataset", "View Contamination Reports"])
 
 # 1. Upload Dataset
 if menu == "Upload Dataset":
@@ -27,20 +27,51 @@ if menu == "Upload Dataset":
             except Exception as e:
                 st.error(f"Error: {e}")
 
-# 2. Create Experiment
+
+elif menu == "View Datasets":
+    st.header("View Existing Datasets")
+
+    try:
+        response = requests.get(f"{API_URL}/datasets")
+        if response.status_code == 200:
+            datasets = response.json()
+
+            if not datasets:
+                st.info("No datasets found.")
+            else:
+                st.success(f"Total Datasets Found: {len(datasets)}")
+                df = pd.DataFrame(datasets)
+                if "created_at" in df.columns:
+                    df["created_at"] = pd.to_datetime(df["created_at"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+
+                st.dataframe(
+                    df[[
+                        "dataset_id",
+                        "dataset_name",
+                        "filename",
+                        "dataset_type",
+                        "file_format",
+                        "filesize",
+                        "created_at"
+                    ]]
+                )
+        else:
+            st.error(f"Error fetching datasets: {response.text}")
+
+    except Exception as e:
+        st.error(f"Connection error: {e}")
+
+
+# 3. Create Experiment
 elif menu == "Create Experiment":
     st.header("Create New Experiment")
-
     experiment_name = st.text_input("Experiment Name")
+    description = st.text_area("Description")
     model_type = st.text_input("Model Type")
     hyperparameters = st.text_area("Hyperparameters (JSON or text)")
-    accuracy = st.number_input("Accuracy", min_value=0.0, max_value=1.0, step=0.01)
-    loss = st.number_input("Loss", min_value=0.0, step=0.01)
-    description = st.text_area("Description")
+    status = st.selectbox("Status", ["created", "running", "completed", "failed"])
     train_dataset_id = st.number_input("Train Dataset ID", min_value=1, step=1)
     test_dataset_id = st.number_input("Test Dataset ID", min_value=1, step=1)
-
-    # status = st.selectbox("Status", ["Pending", "Running", "Completed", "Failed"])
 
     if st.button("Create Experiment"):
         payload = {
@@ -48,19 +79,20 @@ elif menu == "Create Experiment":
             "description": description,
             "model_type": model_type,
             "hyperparameters": hyperparameters,
+            "status": status,
             "train_dataset_id": train_dataset_id,
             "test_dataset_id": test_dataset_id
         }
-
         try:
             response = requests.post(f"{API_URL}/create_experiment", json=payload)
             if response.status_code == 200:
                 st.success("Experiment created successfully!")
                 st.json(response.json())
             else:
-                st.error(f"Error: {response.text}")
+                error_detail = response.json().get('detail', response.text)
+                st.error(f"Error: {response.status_code} - {error_detail}")
         except Exception as e:
-            st.error(f"Connection error: {e}")
+            st.error(f"Connection error: {str(e)}")
 
 # 3. View Experiments
 elif menu == "View Experiments":
@@ -187,6 +219,21 @@ elif menu == "Update Experiment":
             except Exception as e:
                 st.error(f"Connection error: {e}")
 
+elif menu == "Delete Dataset":
+    st.header("Delete a Dataset")
+    dataset_id = st.number_input("Dataset ID to delete", min_value=1, step=1)
+    if st.button("Delete Dataset"):
+        try:
+            response = requests.delete(f"{API_URL}/datasets/{dataset_id}")
+            if response.status_code == 200:
+                st.success(f"Dataset {dataset_id} deleted successfully!")
+                st.json(response.json())
+            else:
+                error_detail = response.json().get('detail', response.text)
+                st.error(f"Error deleting dataset: {response.status_code} - {error_detail}")
+        except Exception as e:
+            st.error(f"Connection error: {str(e)}")
+
 elif menu == "View Contamination Reports":
     st.header("View Contamination Reports")
 
@@ -231,61 +278,3 @@ elif menu == "View Contamination Reports":
 
 
 
-# import streamlit as st
-# import requests
-
-# BASE_URL = "http://127.0.0.1:8000"
-
-# st.set_page_config(page_title="Contamination Tracker", layout="wide")
-
-# st.title("ML Experiment Contamination Tracker")
-
-# # Sidebar navigation
-# menu = st.sidebar.radio("Navigate", ["Experiments", "Contamination Reports", "Alerts"])
-
-# # 1. Experiments view
-# if menu == "Experiments":
-#     st.header("All Experiments")
-#     try:
-#         res = requests.get(f"{BASE_URL}/experiments")
-#         if res.status_code == 200:
-#             data = res.json()["experiments"]
-#             if data:
-#                 st.dataframe(data)
-#             else:
-#                 st.info("No experiments found.")
-#         else:
-#             st.error("Error fetching experiments.")
-#     except Exception as e:
-#         st.error(f"Connection error: {e}")
-
-# # 2. Contamination Reports view
-# elif menu == "Contamination Reports":
-#     st.header("Check Contamination for an Experiment")
-#     experiment_id = st.number_input("Enter Experiment ID", min_value=1)
-#     if st.button("Fetch Report"):
-#         try:
-#             res = requests.get(f"{BASE_URL}/experiments/{experiment_id}/contamination")
-#             if res.status_code == 200:
-#                 data = res.json()
-#                 st.json(data)
-#             else:
-#                 st.warning("No contamination report found for this experiment.")
-#         except Exception as e:
-#             st.error(f"Error: {e}")
-
-# # 3. Alerts view
-# elif menu == "Alerts":
-#     st.header("Contamination Alerts")
-#     try:
-#         res = requests.get(f"{BASE_URL}/alerts")
-#         if res.status_code == 200:
-#             alerts = res.json()["alerts"]
-#             if alerts:
-#                 st.dataframe(alerts)
-#             else:
-#                 st.info("No contamination alerts currently.")
-#         else:
-#             st.error("Error fetching alerts.")
-#     except Exception as e:
-#         st.error(f"Connection error: {e}")

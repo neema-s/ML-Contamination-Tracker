@@ -41,87 +41,88 @@ END //
 
 DELIMITER ;
 
--- get dataset information
-DELIMITER //
+-- -- get dataset information
+-- DELIMITER //
 
-CREATE PROCEDURE get_dataset(IN p_dataset_id INT)
-BEGIN
-    SELECT 
-        dataset_id,
-        dataset_name,
-        filepath,
-        filename,
-        file_format,
-        ver_no,
-        dataset_type,
-        created_at,
-        description,
-        filesize,
-        checksum
-    FROM Dataset
-    WHERE dataset_id = p_dataset_id;
-END //
+-- CREATE PROCEDURE get_dataset(IN p_dataset_id INT)
+-- BEGIN
+--     SELECT 
+--         dataset_id,
+--         dataset_name,
+--         filepath,
+--         filename,
+--         file_format,
+--         ver_no,
+--         dataset_type,
+--         created_at,
+--         description,
+--         filesize,
+--         checksum
+--     FROM Dataset
+--     WHERE dataset_id = p_dataset_id;
+-- END //
 
-DELIMITER ;
+-- DELIMITER ;
 
--- get all datasets 
-DELIMITER //
+-- -- get all datasets 
+-- DROP PROCEDURE IF EXISTS get_all_datasets;
+-- DELIMITER //
+-- CREATE PROCEDURE get_all_datasets()
+-- BEGIN
+--     SELECT 
+--         dataset_id,
+--         dataset_name,
+--         filepath,
+--         file_format,
+--         dataset_type,
+--         created_at,
+--         filesize,
+--         checksum,
+--         (SELECT COUNT(*) FROM Data_Row WHERE dataset_id = Dataset.dataset_id) AS row_count
+--     FROM Dataset
+--     ORDER BY created_at DESC;
+-- END //
+-- DELIMITER ;
 
-CREATE PROCEDURE get_all_datasets()
-BEGIN
-    SELECT 
-        dataset_id,
-        dataset_name,
-        file_format,
-        dataset_type,
-        created_at,
-        filesize,
-        (SELECT COUNT(*) FROM Data_Row WHERE dataset_id = Dataset.dataset_id) AS row_count
-    FROM Dataset
-    ORDER BY created_at DESC;
-END //
+-- -- insert data row 
+-- DELIMITER //
 
-DELIMITER ;
-
--- insert data row 
-DELIMITER //
-
-CREATE PROCEDURE insert_data_row(
-    IN p_dataset_id INT,
-    IN p_row_data TEXT,
-    IN p_row_no INT
-)
-BEGIN
-    INSERT INTO Data_Row (dataset_id, row_data, row_no)
-    VALUES (p_dataset_id, p_row_data, p_row_no);
+-- CREATE PROCEDURE insert_data_row(
+--     IN p_dataset_id INT,
+--     IN p_row_data TEXT,
+--     IN p_row_no INT
+-- )
+-- BEGIN
+--     INSERT INTO Data_Row (dataset_id, row_data, row_no)
+--     VALUES (p_dataset_id, p_row_data, p_row_no);
     
-    SELECT 'Row inserted successfully' AS message;
-    SELECT LAST_INSERT_ID() AS row_id;
-END //
+--     SELECT 'Row inserted successfully' AS message;
+--     SELECT LAST_INSERT_ID() AS row_id;
+-- END //
 
-DELIMITER ;
+-- DELIMITER ;
 
--- update dataset 
-DELIMITER //
+-- -- update dataset 
+-- DELIMITER //
 
-CREATE PROCEDURE update_dataset(
-    IN p_dataset_id INT,
-    IN p_dataset_name VARCHAR(255),
-    IN p_description TEXT,
-    IN p_ver_no VARCHAR(50)
-)
-BEGIN
-    UPDATE Dataset
-    SET 
-        dataset_name = p_dataset_name,
-        description = p_description,
-        ver_no = p_ver_no
-    WHERE dataset_id = p_dataset_id;
+-- CREATE PROCEDURE update_dataset(
+--     IN p_dataset_id INT,
+--     IN p_dataset_name VARCHAR(255),
+--     IN p_description TEXT,
+--     IN p_ver_no VARCHAR(50)
+-- )
+-- BEGIN
+--     UPDATE Dataset
+--     SET 
+--         dataset_name = p_dataset_name,
+--         description = p_description,
+--         ver_no = p_ver_no
+--     WHERE dataset_id = p_dataset_id;
     
-    SELECT 'Dataset updated successfully' AS message;
-END //
+--     SELECT 'Dataset updated successfully' AS message;
+-- END //
 
-DELIMITER ;
+-- DELIMITER ;
 
 -- to delete dataset 
 DELIMITER //
@@ -135,48 +136,89 @@ END //
 
 DELIMITER ;
 
--- get dataset row count
+-- -- get dataset row count
+-- DELIMITER //
+
+-- CREATE PROCEDURE get_dataset_stats(IN p_dataset_id INT)
+-- BEGIN
+--     SELECT 
+--         d.dataset_id,
+--         d.dataset_name,
+--         d.file_format,
+--         d.dataset_type,
+--         d.created_at,
+--         d.filesize,
+--         COUNT(dr.row_id) AS total_rows,
+--         COUNT(DISTINCT dr.row_hash) AS unique_hashes
+--     FROM Dataset d
+--     LEFT JOIN Data_Row dr ON d.dataset_id = dr.dataset_id
+--     WHERE d.dataset_id = p_dataset_id
+--     GROUP BY d.dataset_id;
+-- END //
+
+-- DELIMITER ;
+
+-- -- get rows for a dataset
+-- DELIMITER //
+
+-- CREATE PROCEDURE get_dataset_rows(
+--     IN p_dataset_id INT,
+--     IN p_limit INT,
+--     IN p_offset INT
+-- )
+-- BEGIN
+--     SELECT 
+--         row_id,
+--         dataset_id,
+--         row_hash,
+--         row_no,
+--         row_data,
+--         created_at
+--     FROM Data_Row
+--     WHERE dataset_id = p_dataset_id
+--     ORDER BY row_no
+--     LIMIT p_limit OFFSET p_offset;
+-- END //
+
+-- DELIMITER ;
+
+
 DELIMITER //
-
-CREATE PROCEDURE get_dataset_stats(IN p_dataset_id INT)
-BEGIN
-    SELECT 
-        d.dataset_id,
-        d.dataset_name,
-        d.file_format,
-        d.dataset_type,
-        d.created_at,
-        d.filesize,
-        COUNT(dr.row_id) AS total_rows,
-        COUNT(DISTINCT dr.row_hash) AS unique_hashes
-    FROM Dataset d
-    LEFT JOIN Data_Row dr ON d.dataset_id = dr.dataset_id
-    WHERE d.dataset_id = p_dataset_id
-    GROUP BY d.dataset_id;
-END //
-
-DELIMITER ;
-
--- get rows for a dataset
-DELIMITER //
-
-CREATE PROCEDURE get_dataset_rows(
-    IN p_dataset_id INT,
-    IN p_limit INT,
-    IN p_offset INT
+CREATE PROCEDURE create_experiment(
+    IN p_experiment_name VARCHAR(255),
+    IN p_description TEXT,
+    IN p_model_type VARCHAR(100),
+    IN p_hyperparameters TEXT,
+    IN p_status VARCHAR(50),
+    IN p_train_dataset_id INT,
+    IN p_test_dataset_id INT
 )
 BEGIN
-    SELECT 
-        row_id,
-        dataset_id,
-        row_hash,
-        row_no,
-        row_data,
-        created_at
-    FROM Data_Row
-    WHERE dataset_id = p_dataset_id
-    ORDER BY row_no
-    LIMIT p_limit OFFSET p_offset;
-END //
+    DECLARE v_experiment_id INT;
 
+    INSERT INTO Experiment (
+        experiment_name,
+        description,
+        model_type,
+        hyperparameters,
+        status,
+        created_at
+    )
+    VALUES (
+        p_experiment_name,
+        p_description,
+        p_model_type,
+        p_hyperparameters,
+        p_status,
+        NOW()
+    );
+    SET v_experiment_id = LAST_INSERT_ID();
+
+    INSERT INTO Experiment_Dataset (experiment_id, data_id, usage_type)
+    VALUES (v_experiment_id, p_train_dataset_id, 'train'),
+           (v_experiment_id, p_test_dataset_id, 'test');
+
+    SELECT 'Experiment created successfully' AS message;
+    SELECT v_experiment_id AS experiment_id;
+END //
 DELIMITER ;

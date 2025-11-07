@@ -1,6 +1,3 @@
-
-
-
 from fastapi import FastAPI, File, UploadFile, HTTPException, Body
 from fastapi.responses import JSONResponse
 import pandas as pd
@@ -20,9 +17,10 @@ async def upload_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only CSV files are allowed")
 
     filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+    file_content = await file.read()
 
     with open(filepath, "wb") as f:
-        f.write(await file.read())
+        f.write(file_content)
 
     try:
         df = pd.read_csv(filepath)
@@ -30,16 +28,12 @@ async def upload_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Error reading CSV: {str(e)}")
 
     conn = get_connection()
-    cursor = conn.cursor(buffered=True)
+    cursor = conn.cursor(dictionary=True, buffered=True)
+    dataset_id = None
 
     try:
-        cursor.execute("""
-            INSERT INTO Dataset (
-                dataset_name, filepath, filename, file_format,
-                dataset_type, description, filesize, checksum
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, SHA2(%s, 256))
-        """, (
+        # Call insert_dataset stored procedure
+        cursor.callproc("insert_dataset", [
             file.filename,
             filepath,
             file.filename,
@@ -47,18 +41,30 @@ async def upload_csv(file: UploadFile = File(...)):
             "uploaded",
             "User uploaded dataset",
             os.path.getsize(filepath),
-            file.filename
-        ))
+            file.filename 
+        ])
+        
+        results = list(cursor.stored_results())
+        if len(results) >= 2:
+            results[0].fetchall() 
+            row = results[1].fetchone()
+            if row and "dataset_id" in row:
+                dataset_id = row["dataset_id"]
+            else:
+                raise HTTPException(status_code=500, detail="Failed to retrieve dataset_id from stored procedure")
+        else:
+            raise HTTPException(status_code=500, detail="Unexpected number of result sets from insert_dataset")
         conn.commit()
-        dataset_id = cursor.lastrowid
 
+        # Insert rows using insert_data_row procedure
         for i, row in df.iterrows():
-            row_data = row.to_json()
-            cursor.execute("""
-                INSERT INTO Data_Row (dataset_id, row_no, row_data)
-                VALUES (%s, %s, %s)
-            """, (dataset_id, i + 1, row_data))
-
+            cursor.callproc("insert_data_row", [
+                dataset_id,
+                row.to_json(),
+                i + 1
+            ])
+            for result in cursor.stored_results():
+                result.fetchall()  
         conn.commit()
 
     except Exception as e:
@@ -69,12 +75,56 @@ async def upload_csv(file: UploadFile = File(...)):
         cursor.close()
         conn.close()
 
+    if dataset_id is None:
+        raise HTTPException(status_code=500, detail="Failed to assign dataset_id")
+
     return JSONResponse({
         "message": "CSV uploaded and data stored successfully!",
         "dataset_id": dataset_id,
         "rows_inserted": len(df)
     })
 
+@app.get("/datasets")
+def get_all_datasets():
+    """Fetch all datasets."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT 
+            dataset_id,
+            dataset_name,
+            filepath,
+            filename,
+            file_format,
+            dataset_type,
+            created_at,
+            filesize,
+            checksum
+        FROM Dataset
+        ORDER BY created_at DESC
+    """)
+    datasets = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return datasets
+
+@app.delete("/datasets/{dataset_id}")
+def delete_dataset(dataset_id: int):
+    """Delete a dataset by ID."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.callproc("delete_dataset", [dataset_id])
+        for result in cursor.stored_results():
+            result.fetchall()  
+        conn.commit()
+        return {"message": f"Dataset {dataset_id} deleted successfully."}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
 
 @app.post("/create_experiment")
 async def create_experiment(
@@ -84,51 +134,35 @@ async def create_experiment(
     hyperparameters: str = Body(None),
     status: str = Body("created"),
     train_dataset_id: int = Body(...),
-    test_dataset_id: int = Body(...),
-    model_id: int = Body(None),
-    relationship_type: str = Body("trained_with")
+    test_dataset_id: int = Body(...)
 ):
+    """Create a new experiment."""
     conn = get_connection()
-    cursor = conn.cursor()
-
+    cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("""
-            INSERT INTO Experiment (
-                experiment_name, description, model_type, hyperparameters, status, created_at
-            )
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (
+        cursor.callproc("create_experiment", [
             experiment_name,
             description,
             model_type,
             hyperparameters,
             status,
-            datetime.now()
-        ))
+            train_dataset_id,
+            test_dataset_id
+        ])
+        results = list(cursor.stored_results())
+        if len(results) >= 2:
+            results[0].fetchall()  
+            row = results[1].fetchone()
+            if row and "experiment_id" in row:
+                experiment_id = row["experiment_id"]
+            else:
+                raise HTTPException(status_code=500, detail="Failed to retrieve experiment_id from stored procedure")
+        else:
+            raise HTTPException(status_code=500, detail="Unexpected number of result sets from create_experiment")
         conn.commit()
-        experiment_id = cursor.lastrowid
-
-        cursor.execute("""
-            INSERT INTO Experiment_Dataset (experiment_id, data_id, usage_type)
-            VALUES (%s, %s, %s)
-        """, (experiment_id, train_dataset_id, "train"))
-        cursor.execute("""
-            INSERT INTO Experiment_Dataset (experiment_id, data_id, usage_type)
-            VALUES (%s, %s, %s)
-        """, (experiment_id, test_dataset_id, "test"))
-        conn.commit()
-
-        if model_id:
-            cursor.execute("""
-                INSERT INTO Experiment_Model (exp_id, model_id, relationship_type)
-                VALUES (%s, %s, %s)
-            """, (experiment_id, model_id, relationship_type))
-            conn.commit()
-
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-
     finally:
         cursor.close()
         conn.close()
@@ -139,10 +173,8 @@ async def create_experiment(
         "linked_datasets": {
             "train_dataset_id": train_dataset_id,
             "test_dataset_id": test_dataset_id
-        },
-        "linked_model": model_id or "No model linked"
+        }
     })
-
 
 @app.get("/get_experiments")
 async def get_experiments():
